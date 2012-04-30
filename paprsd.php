@@ -2,7 +2,7 @@
 <?php
 /**
  * PHP APRS Service
- * @author Alexandru Mirea <yo3igc@gmail.com>
+ * @author Alex Mirea <yo3igc@gmail.com>
  * @license http://creativecommons.org/licenses/by/3.0/
  */
 
@@ -15,7 +15,7 @@ define('BASE_PATH', dirname(__FILE__) . DIRECTORY_SEPARATOR);
 // include autoloader class
 require_once(BASE_PATH . 'Loader.php');
 
-// include autoloader class
+// include System Daemon class
 require_once(BASE_PATH . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'Daemon.php');
 
 try {
@@ -26,7 +26,7 @@ try {
 		'appName' => 'paprsd',
 		'appDir' => dirname(__FILE__),
 		'appDescription' => 'Listen for APRS messages and reply',
-		'authorName' => 'Alexandru Mirea - YO3IGC',
+		'authorName' => 'Alex Mirea - YO3IGC',
 		'authorEmail' => 'yo3igc@gmail.com',
 		'sysMaxExecutionTime' => '0',
 		'sysMaxInputTime' => '0',
@@ -44,7 +44,7 @@ try {
 		if (!$comm->isConnected()) {
 			System_Daemon::info('Opening connection to server');
 			if (!$comm->connect()) {
-				System_Daemon::info('Failed connection to server. Retry in 10 seconds');
+				System_Daemon::info('Connection to server failed. Retrying in 10 seconds');
 				System_Daemon::iterate(9);
 			}
 			else {
@@ -61,12 +61,17 @@ try {
 		if ($comm->isConnected()) {
 			// this instruction is blocking the current thread!!!
 			$raw_message = $comm->read();
+			$ack = Queue::getInstance()->pop('ack');
+			if ($ack) {
+				System_Daemon::info('Sending ACK: ' . $ack);
+				$comm->write($ack);
+			}
 			$aprs_message = new AprsMessage($raw_message);
 			if ($aprs_message->isDirty() && $aprs_message->getTo() == Config::$service_callsign) {
 				$db->add($aprs_message);
 				if ($aprs_message->getAck() != FALSE) {
-					System_Daemon::info('Sending ACK');
-					$comm->write($aprs_message->getAck());
+					System_Daemon::info('Registering ACK');
+					Queue::getInstance()->push($aprs_message->getAck(), 'ack', 3);
 				}
 			}
 			unset($aprs_message);
